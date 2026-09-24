@@ -1,8 +1,6 @@
 #!/bin/bash
 
-HEALTHCHECKS_LIB=/usr/lib/omnect/healthcheck
-
-. ${HEALTHCHECKS_DIR}/healthchecklib.sh
+. /usr/lib/omnect/healthcheck/healthchecklib.sh
 
 CFGFILE=omnect_health_checks.json
 CFGFILEDIR=/etc/omnect/health_check
@@ -55,7 +53,7 @@ function do__cmd() {
 	[ "$type" ] \
 	    || { warn "entry $i in \"$cfgfile\" is missing \"type\" attribute"; continue; }
 
-	check="${HEALTHCHECKS_DIR}/omnect_health__${type}.sh"
+	check="omnect_health__${type}.sh"
 	[ -x "$check" ] \
 	    || { warn "check \"$check\" for type \"$type\" (entry $i in \"$cfgfile\") cannot be called"; continue; }
 

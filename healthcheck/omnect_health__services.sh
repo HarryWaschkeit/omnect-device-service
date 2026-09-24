@@ -11,7 +11,7 @@
 # An additional requirement is to have multiple files with specifications of
 # log entry
 
-. healthchecklib.sh
+. /usr/lib/omnect/healthcheck/healthchecklib.sh
 
 : ${CFGDIR:=/etc/omnect/health_check}
 : ${CFGFILE:=omnect_service_log_analysis.json}

@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 
-. healthchecklib.sh
+. /usr/lib/omnect/healthcheck/healthchecklib.sh
 
 # prints crash-looping services to stdout; returns 1 if they cannot be determined
 function find_crash_loops() {

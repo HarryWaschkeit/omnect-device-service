@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 
-. healthchecklib.sh
+. /usr/lib/omnect/healthcheck/healthchecklib.sh
 
 function checkit() {
     local retval
