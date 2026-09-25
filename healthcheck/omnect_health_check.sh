@@ -54,7 +54,7 @@ function do__cmd() {
 	    || { warn "entry $i in \"$cfgfile\" is missing \"type\" attribute"; continue; }
 
 	check="omnect_health__${type}.sh"
-	[ -x "$check" ] \
+	command -v "$check" > /dev/null \
 	    || { warn "check \"$check\" for type \"$type\" (entry $i in \"$cfgfile\") cannot be called"; continue; }
 
 	name=$(jq -r "if .[$idx].\"name\" then .[$idx].\"name\" else empty end" "$cfgfile")

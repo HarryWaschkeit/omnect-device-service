@@ -7,7 +7,7 @@ ME="${0##*/}"
 # add local directory to PATH variable so that check scripts are automatically
 # found, and make that addition directory agnostic
 # NOTE: we rely on bash being used here
-PATH="${PATH}:${BASH_SOURCE[0]}"
+PATH="${PATH}:$(dirname ${BASH_SOURCE[0])}"
 
 function print() {
     echo -e "$@"
