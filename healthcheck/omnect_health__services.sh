@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Purpose of this script is to analyze service log files and rate their
 # content, and hence the status of the respective service, as running normal,

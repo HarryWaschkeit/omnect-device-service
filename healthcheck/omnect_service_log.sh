@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Purpose of this script is to record service (re-)starts and terminations,
 # regular as well as unintentional ones, in a generic way so that such
