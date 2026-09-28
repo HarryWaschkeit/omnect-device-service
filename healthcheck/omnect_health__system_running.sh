@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 
-. /usr/lib/omnect/healthcheck/healthchecklib.sh
+. ${BASH_SOURCE[0]%/*}/healthchecklib.sh
 
 function checkit() {
     do_rate_cmd systemctl -q is-system-running

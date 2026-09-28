@@ -5,7 +5,9 @@
 # occurrences can be examined by a health check routine.
 #
 
-. healthchecklib.sh
+HEALTHCHECK_DIR=/usr/lib/omnect/healthcheck
+
+. ./${HEALTHCHECK_DIR}/healthchecklib.sh
 
 SERVICE_EXITLOGDIRNAME=omnect_health_log
 SERVICE_EXITLOGDIR=/var/run/${SERVICE_EXITLOGDIRNAME}
