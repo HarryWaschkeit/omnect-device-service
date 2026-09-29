@@ -7,7 +7,7 @@
 
 HEALTHCHECK_DIR=/usr/lib/omnect/healthcheck
 
-. ./${HEALTHCHECK_DIR}/healthchecklib.sh
+. ${HEALTHCHECK_DIR}/healthchecklib.sh
 
 SERVICE_EXITLOGDIRNAME=omnect_health_log
 SERVICE_EXITLOGDIR=/var/run/${SERVICE_EXITLOGDIRNAME}
@@ -86,7 +86,7 @@ case "$1" in
 	EXPECTED_PARAMS=5
     ;;
     *)
-	error "unrecognized operation \"$1\" given"
+	fatal "unrecognized operation \"$1\" given" && usage 1
     ;;
 esac
 
