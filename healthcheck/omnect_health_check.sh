@@ -37,6 +37,7 @@ function do__cmd() {
     local output_when="$2" # 0 = never, 1 = failed only, 2 = all
     local cfgfile="$3"
     local selected_checks="$4"
+    local do_print_rating=0
     local nselected_checks nchecked nchecks check i idx name type extra_args
     local output retval
 
@@ -50,26 +51,34 @@ function do__cmd() {
     while [ $i -lt "$nchecks" ]; do
 	idx=$i
 	i=$((i + 1))
+        retval=0
 
 	type=$(jq -r "if .[$idx].\"type\" then .[$idx].\"type\" else empty end" "$cfgfile")
 	[ "$type" ] \
 	    || { warn "entry $i in \"$cfgfile\" is missing \"type\" attribute"; continue; }
 
 	check="${HEALTHCHECK_DIR}/omnect_health__${type}.sh"
-	[ -x "$check" ] \
-	    || { warn "check \"$check\" for type \"$type\" (entry $i in \"$cfgfile\") cannot be called"; continue; }
+	[ $retval = 0 -a -x "$check" ] \
+	    || { output="check \"$check\" for type \"$type\" (entry $i in \"$cfgfile\") cannot be called"; retval=2; do_print_rating=1; }
 
-	name=$(jq -r "if .[$idx].\"name\" then .[$idx].\"name\" else empty end" "$cfgfile")
-	: ${name:=$type}
-	[ -z "$selected_checks" -o "$(echo $selected_checks | grep -w "$name")" -o "$(echo $selected_checks | grep -w "$type")" ] || continue
+        if [ $retval = 0 ]; then
+	    name=$(jq -r "if .[$idx].\"name\" then .[$idx].\"name\" else empty end" "$cfgfile")
+	    : ${name:=$type}
+	    [ -z "$selected_checks" -o "$(echo $selected_checks | grep -w "$name")" -o "$(echo $selected_checks | grep -w "$type")" ] || continue
 
-	extra_args=$(jq -r "if .[$idx].\"extra-args\" then .[$idx].\"extra-args\" else empty end" "$cfgfile")
-	output=$($check $cmd $extra_args)
-	retval=$?
-	do_rate $retval
+	    extra_args=$(jq -r "if .[$idx].\"extra-args\" then .[$idx].\"extra-args\" else empty end" "$cfgfile")
+	    output=$($check $cmd $extra_args)
+	    retval=$?
+        fi
 	if [ $output_when = 2 -o $output_when = 1 -a $retval != 0 ]; then
 	    echo "$output"
+            if [ ${do_print_rating} = 1 ]; then
+                print_rating $retval ${type} "${check##*/}"
+                do_print_rating=0
+            fi
 	fi
+	do_rate $retval
+
     done
 }
 
