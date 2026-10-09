@@ -37,7 +37,6 @@ function do__cmd() {
     local output_when="$2" # 0 = never, 1 = failed only, 2 = all
     local cfgfile="$3"
     local selected_checks="$4"
-    local do_print_rating=0
     local nselected_checks nchecked nchecks check i idx name type extra_args
     local output retval
 
@@ -49,7 +48,7 @@ function do__cmd() {
     
     i=0
     while [ $i -lt "$nchecks" ]; do
-	idx=$i
+        idx=$i
         i=$((i + 1))
 
         type=$(jq -r "if .[$idx].\"type\" then .[$idx].\"type\" else empty end" "$cfgfile")
@@ -74,7 +73,7 @@ function do__cmd() {
 
         if [ $output_when = 2 -o $output_when = 1 -a $retval != 0 ]; then
             echo "$output"
-	fi
+        fi
 	do_rate $retval
 
     done
