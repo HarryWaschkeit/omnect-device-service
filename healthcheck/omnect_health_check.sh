@@ -50,32 +50,30 @@ function do__cmd() {
     i=0
     while [ $i -lt "$nchecks" ]; do
 	idx=$i
-	i=$((i + 1))
-        retval=0
+        i=$((i + 1))
 
-	type=$(jq -r "if .[$idx].\"type\" then .[$idx].\"type\" else empty end" "$cfgfile")
-	[ "$type" ] \
-	    || { warn "entry $i in \"$cfgfile\" is missing \"type\" attribute"; continue; }
+        type=$(jq -r "if .[$idx].\"type\" then .[$idx].\"type\" else empty end" "$cfgfile")
+        [ "$type" ] \
+            || { error "entry $i in \"$cfgfile\" is missing \"type\" attribute"; continue; }
 
-	check="${HEALTHCHECK_DIR}/omnect_health__${type}.sh"
-	[ -x "$check" ] \
-	    || { output="check \"$check\" for type \"$type\" (entry $i in \"$cfgfile\") cannot be called"; retval=2; do_print_rating=1; }
-
-        if [ $retval = 0 ]; then
-	    name=$(jq -r "if .[$idx].\"name\" then .[$idx].\"name\" else empty end" "$cfgfile")
-	    : ${name:=$type}
-	    [ -z "$selected_checks" -o "$(echo $selected_checks | grep -w "$name")" -o "$(echo $selected_checks | grep -w "$type")" ] || continue
-
-	    extra_args=$(jq -r "if .[$idx].\"extra-args\" then .[$idx].\"extra-args\" else empty end" "$cfgfile")
-	    output=$($check $cmd $extra_args)
-	    retval=$?
+        check="${HEALTHCHECK_DIR}/omnect_health__${type}.sh"
+        if [ ! -x "$check" ]; then
+            local rate=2
+            error "check \"$check\" for type \"$type\" (entry $i in \"$cfgfile\") cannot be called"
+            print_rating $rate ${type} "${check##*/}"
+            do_rate $rate
+            continue
         fi
-	if [ $output_when = 2 -o $output_when = 1 -a $retval != 0 ]; then
-	    echo "$output"
-            if [ ${do_print_rating} = 1 ]; then
-                print_rating $retval ${type} "${check##*/}"
-                do_print_rating=0
-            fi
+        name=$(jq -r "if .[$idx].\"name\" then .[$idx].\"name\" else empty end" "$cfgfile")
+        : ${name:=$type}
+        [ -z "$selected_checks" -o "$(echo $selected_checks | grep -w "$name")" -o "$(echo $selected_checks | grep -w "$type")" ] || continue
+
+        extra_args=$(jq -r "if .[$idx].\"extra-args\" then .[$idx].\"extra-args\" else empty end" "$cfgfile")
+        output=$($check $cmd $extra_args)
+        retval=$?
+
+        if [ $output_when = 2 -o $output_when = 1 -a $retval != 0 ]; then
+            echo "$output"
 	fi
 	do_rate $retval
 
