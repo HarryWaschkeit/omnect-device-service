@@ -11,7 +11,7 @@
 # An additional requirement is to have multiple files with specifications of
 # log entry
 
-. ${BASH_SOURCE[0]%/*}/healthchecklib.sh
+. ${BASH_SOURCE[0]%/*}/healthchecklib.sh || exit 2
 
 : ${CFGDIR:=/etc/omnect/health_check}
 : ${CFGFILE:=omnect_service_log_analysis.json}
