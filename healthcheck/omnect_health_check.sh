@@ -58,7 +58,7 @@ function do__cmd() {
 	    || { warn "entry $i in \"$cfgfile\" is missing \"type\" attribute"; continue; }
 
 	check="${HEALTHCHECK_DIR}/omnect_health__${type}.sh"
-	[ $retval = 0 -a -x "$check" ] \
+	[ -x "$check" ] \
 	    || { output="check \"$check\" for type \"$type\" (entry $i in \"$cfgfile\") cannot be called"; retval=2; do_print_rating=1; }
 
         if [ $retval = 0 ]; then
