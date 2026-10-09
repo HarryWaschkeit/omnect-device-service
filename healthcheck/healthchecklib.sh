@@ -56,7 +56,7 @@ function do_rate() {
 	    ;;
 	*)
 	    fatal "Unknown rating \"$rating\"${hint:-${ME}} - treated as 2 == RED"
-            # FALL THROUGH
+            overall_rating=2
 	    ;;
     esac
 }
