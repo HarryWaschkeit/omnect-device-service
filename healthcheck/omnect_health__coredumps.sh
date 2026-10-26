@@ -3,9 +3,22 @@
 
 . "$(dirname -- "${BASH_SOURCE[0]}")/healthchecklib.sh" || exit 2
 
-# prints core dumps of the current system run to stdout
+# the core dumps of the current system run, and what kept them from being
+# looked up
+coredumps=
+coredump_errors=
+
+# puts the core dumps of the current system run into "coredumps"; returns 0
+# when it could look for them, and 2 when it could not
+#
+# NOTE:
+#   coredumpctl exits non-zero both when it found nothing and when it could
+#   not run at all, so its exit status alone cannot tell a system without core
+#   dumps from a check that never looked. "-q" silences the message about an
+#   empty result, which leaves its diagnostics as the only difference between
+#   the two.
 function find_coredumps() {
-    local up now since sinces
+    local up now since sinces errorfile rc=0
 
     # at first find out time span we want to have core dumps for as we inly want
     # to consider those that happened during this system run
@@ -14,30 +27,53 @@ function find_coredumps() {
     sinces=$((now - up))
     since="$(date -d '@'"$sinces" +"%Y-%m-%d %H:%M:%S")"
 
-    coredumpctl -q --since "$since"
+    errorfile=$(mktemp) \
+        || { coredump_errors="no temporary file to collect the lookup errors in"; return 2; }
+
+    coredumps=$(coredumpctl -q --since "$since" 2>"$errorfile") || rc=$?
+    coredump_errors=$(cat "$errorfile")
+    rm -f "$errorfile"
+
+    [ $rc -eq 0 -o -z "$coredump_errors" ] || return 2
+
+    coredump_errors=
+    return 0
 }
 
-function do_check() {
-    local cores rating=0
+# rates the core dumps of the current system run and returns that rating
+function rate_coredumps() {
+    local rating=0
 
-    cores=$(find_coredumps)
-    [ -z "${cores}" ] || rating=2
+    if ! find_coredumps; then
+        error "core dumps could not be looked up: ${coredump_errors}"
+        rating=2
+    elif [ -n "${coredumps}" ]; then
+        rating=2
+    fi
 
-    print_rating ${rating} "coredumps" "$ME"
     do_rate ${rating}
 
     return ${rating}
 }
 
-function do_get_infos() {
-    local cores rating=0
+function do_check() {
+    local rating=0
 
-    cores=$(find_coredumps)
-    [ -z "${cores}" ] || rating=2
-    do_rate ${rating}
+    rate_coredumps || rating=$?
+
+    print_rating ${rating} "coredumps" "$ME"
+
+    return ${rating}
+}
+
+function do_get_infos() {
+    local rating=0
+
+    rate_coredumps || rating=$?
 
     print_info_header "${ME}" "${rating}"
-    [ -z "${cores}" ] || echo "${cores}"
+    [ -z "${coredumps}" ] || echo "${coredumps}"
+    [ -z "${coredump_errors}" ] || echo "${coredump_errors}"
 
     return ${rating}
 }

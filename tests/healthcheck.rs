@@ -582,6 +582,68 @@ fn check_rates_a_core_dump_red() {
 }
 
 #[test]
+fn a_core_dump_lookup_that_failed_is_not_green() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.stub(
+        "coredumpctl",
+        "echo 'Failed to open journal.' >&2\nexit 1\n",
+    );
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_RED,
+        "a device nobody could look for core dumps on must not be rated green:\n{}{}",
+        report.stdout, report.stderr
+    );
+    assert!(
+        report.stderr.contains("Failed to open journal."),
+        "check must say why the core dumps could not be looked up:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
+fn a_system_without_core_dumps_is_green() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    // coredumpctl reports an empty result as a failure, and "-q" is what
+    // keeps it from saying so
+    sandbox.stub("coredumpctl", "exit 1\n");
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_GREEN,
+        "a device without core dumps must be rated green:\n{}{}",
+        report.stdout, report.stderr
+    );
+}
+
+#[test]
+fn get_infos_reports_a_core_dump_lookup_that_failed() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.stub(
+        "coredumpctl",
+        "echo 'Failed to open journal.' >&2\nexit 1\n",
+    );
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["get-infos"]);
+
+    assert_eq!(
+        report.rating, RATING_RED,
+        "get-infos must not rate a failed core dump lookup green:\n{}{}",
+        report.stdout, report.stderr
+    );
+    assert!(
+        report.stdout.contains("Failed to open journal."),
+        "get-infos must show why the core dumps could not be looked up:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
 fn a_check_script_finds_its_library_when_invoked_by_bare_name() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
 
