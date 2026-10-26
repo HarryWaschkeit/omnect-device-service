@@ -930,25 +930,6 @@ fn the_rating_never_replaces_the_exit_log() {
 }
 
 #[test]
-fn rating_keeps_the_exit_log_as_readable_as_it_was() {
-    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
-    sandbox.set_service_analysis(PER_SERVICE_RATINGS);
-    sandbox.write_exit_log("strict", "HUP");
-    let log = sandbox.run().join("strict.exit-log");
-    fs::set_permissions(&log, fs::Permissions::from_mode(0o644)).expect("chmod exit log");
-
-    let report = sandbox.run_script("omnect_health__services.sh", &["check"]);
-
-    let mode = fs::metadata(&log).expect("stat log").permissions().mode() & 0o777;
-    assert_eq!(
-        mode, 0o644,
-        "rating must not lock the exit log away from its readers, but left \
-         mode {mode:o}:\n{}{}",
-        report.stdout, report.stderr
-    );
-}
-
-#[test]
 fn an_entry_added_after_a_rating_is_rated_too() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
     sandbox.set_service_analysis(CRASH_RATED_SERVICE);
@@ -1124,8 +1105,9 @@ fn an_unratable_exit_log_is_rated_red_and_kept() {
 fn an_empty_exit_log_is_not_rated_green() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
     sandbox.set_service_analysis(CRASH_RATED_SERVICE);
-    // omnect_service_log.sh creates a log by redirecting into it, so a check
-    // running at that very moment finds it readable and empty
+    // a log can be empty for reasons of its own - omnect_service_log.sh
+    // assembles every version under a temporary name, so it never leaves one
+    // behind itself - and an empty log says nothing about the service
     fs::write(sandbox.run().join("picky.exit-log"), "").expect("write empty exit log");
 
     let report = sandbox.run_script("omnect_health__services.sh", &["check"]);

@@ -48,9 +48,7 @@ function output_logentry() {
     
     # NOTE: a check may read this log at any moment, so every version of it
     #	    is assembled under a temporary name and moved into place in one
-    #	    step. Writing to the log itself would expose it empty, then half
-    #	    written, and a reader cannot tell either from a log of a service
-    #	    that simply has nothing to report.
+    #	    step, which leaves a reader either the old log or the new one.
     local failed=0
     if [ -r "${outputfile}" ]; then
 	# append new entry in existing file

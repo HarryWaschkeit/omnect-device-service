@@ -110,13 +110,8 @@ function report_infos() {
 }
 
 # reports the given rating for every service the caller asked for, for the
-# cases in which the configuration does not allow rating them one by one
-#
-# NOTE:
-#   a rating nobody is named in is of no use to the reader: the dispatcher
-#   prints what a check wrote and counts it as run, so returning a rating
-#   without a line of its own leaves an empty line behind and an overall
-#   rating that names no culprit, with the reason on stderr at best
+# cases in which the configuration does not allow rating them one by one, so
+# that the reader of a rating is told which services it is about
 function report_all() {
     local report="$1" rating="$2" service
 
@@ -135,18 +130,16 @@ function report_all() {
 # through the given report function
 #
 # NOTE:
-#   both commands share this loop rather than keeping one of their own,
-#   because they differ only in how a service is reported: as long as they
-#   were written out twice, a fix to one of them kept missing the other
+#   both commands share this loop, because they differ only in how a service
+#   is reported
 function do__cmd() {
     local report="$1"
     local service rating servicelog services=() known unknown=()
 
     # NOTE:
-    #   a missing configuration is reported here rather than before the
-    #   command is known, because what it means depends on what was asked
-    #   for: the services named on the command line are then of unknown
-    #   health, which is yellow, not green
+    #   what a missing configuration means depends on what was asked for, so
+    #   it is rated here: the services named on the command line are then of
+    #   unknown health, which is yellow, not green
     if [ ! -r "$CFGFILEPATH" ]; then
         warn "no configuration file (${CFGFILEPATH}) found, don't know what to do."
         do_rate 1
