@@ -24,6 +24,10 @@ const RATING_GREEN: i32 = 0;
 const RATING_YELLOW: i32 = 1;
 const RATING_RED: i32 = 2;
 
+/// The dispatcher reads the whole check configuration in one `jq` call, and
+/// does not read it a second time.
+const CONFIG_READS: usize = 1;
+
 const CHECK_SCRIPTS: &[&str] = &[
     "omnect_health__coredumps.sh",
     "omnect_health__crash_loop.sh",
@@ -365,6 +369,16 @@ exec "{jq}" "$@"
         .expect("write exit log");
     }
 
+    /// Installs a check script of the given type, so a configuration entry
+    /// can select it.
+    fn install_check(&self, check_type: &str, body: &str) {
+        write_with_mode(
+            &self.lib().join(format!("omnect_health__{check_type}.sh")),
+            &format!("#!/bin/bash\n{body}"),
+            EXECUTABLE_MODE,
+        );
+    }
+
     /// Installs a counting `jq` wrapper and returns the file it records calls in.
     fn count_jq_calls(&self) -> PathBuf {
         let counter = self.dir.path().join("jq-calls");
@@ -491,6 +505,31 @@ fn an_entry_without_a_type_is_rated_red() {
     assert!(
         !report.stderr.contains("no check was run"),
         "a rated entry must not count as nothing having been checked:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+    assert_eq!(
+        report.ratings(),
+        [("[RED]", "nameless")],
+        "the entry that rated this run must be named where the rating is \
+         read:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
+fn a_check_that_says_nothing_is_still_named_with_its_rating() {
+    let sandbox = Sandbox::new(r#"[ { "name": "silent", "type": "silent" } ]"#);
+    sandbox.install_check("silent", "exit 2\n");
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.ratings(),
+        [("[RED]", "silent")],
+        "a check that rates this run without saying so must not leave the \
+         overall rating as the only trace of it:\n{}{}",
         report.stdout,
         report.stderr
     );
@@ -775,6 +814,14 @@ fn a_configuration_jq_cannot_read_completely_is_rated_red() {
         "a configuration that cannot be read completely must not be rated green:\n{}{}",
         report.stdout, report.stderr
     );
+    assert_eq!(
+        report.ratings(),
+        [("[RED]", "omnect_health_checks.json")],
+        "the configuration that rated this run must be named where the \
+         rating is read:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
 }
 
 #[test]
@@ -1021,6 +1068,13 @@ fn a_check_name_is_not_rejected_by_an_unreadable_config() {
         "naming a check must not turn an unreadable config into an unknown name:\n{}{}",
         report.stdout, report.stderr
     );
+    assert!(
+        report.stdout.contains("OVERALL:"),
+        "a check run must report its overall rating even when it could not \
+         be made:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
 }
 
 #[test]
@@ -1163,11 +1217,36 @@ fn the_check_configuration_is_read_in_a_single_pass() {
         .unwrap_or_default()
         .lines()
         .count();
-    assert!(
-        calls <= 2,
+    assert_eq!(
+        calls, CONFIG_READS,
         "reading 11 check entries must not start {calls} jq processes:\n{}{}",
+        report.stdout, report.stderr
+    );
+}
+
+#[test]
+fn naming_a_check_does_not_read_the_configuration_again() {
+    let sandbox = Sandbox::new(ELEVEN_CHECKS_CONFIG);
+    let counter = sandbox.count_jq_calls();
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check", "cores1"]);
+
+    assert_eq!(
+        report.ratings(),
+        [("[GREEN]", "coredumps")],
+        "only the named check must run:\n{}{}",
         report.stdout,
         report.stderr
+    );
+    let calls = fs::read_to_string(&counter)
+        .unwrap_or_default()
+        .lines()
+        .count();
+    assert_eq!(
+        calls, CONFIG_READS,
+        "a name has to be looked up in the entries already read, but the \
+         configuration was read {calls} times:\n{}{}",
+        report.stdout, report.stderr
     );
 }
 
