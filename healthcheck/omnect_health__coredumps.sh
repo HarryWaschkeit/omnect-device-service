@@ -3,10 +3,11 @@
 
 . "$(dirname -- "${BASH_SOURCE[0]}")/healthchecklib.sh" || exit 2
 
-# the core dumps of the current system run, and what kept them from being
-# looked up
+# the core dumps of the current system run, what kept them from being looked
+# up, and which parts of the journal could not be searched
 coredumps=
 coredump_errors=
+coredump_skipped=
 
 # puts the core dumps of the current system run into "coredumps"; returns 0
 # when it could look for them, and 2 when it could not
@@ -18,7 +19,7 @@ coredump_errors=
 #   empty result, which leaves its diagnostics as the only difference between
 #   the two.
 function find_coredumps() {
-    local up now since sinces errorfile rc=0
+    local up now since sinces out rc=0
 
     # at first find out time span we want to have core dumps for as we inly want
     # to consider those that happened during this system run
@@ -27,16 +28,26 @@ function find_coredumps() {
     sinces=$((now - up))
     since="$(date -d '@'"$sinces" +"%Y-%m-%d %H:%M:%S")"
 
-    errorfile=$(mktemp) \
-        || { coredump_errors="no temporary file to collect the lookup errors in"; return 2; }
+    # both streams can share a variable: core dumps are only ever printed when
+    # coredumpctl succeeds, and the diagnostics are sorted out right below
+    out=$(coredumpctl -q --since "$since" 2>&1) || rc=$?
 
-    coredumps=$(coredumpctl -q --since "$since" 2>"$errorfile") || rc=$?
-    coredump_errors=$(cat "$errorfile")
-    rm -f "$errorfile"
-
-    [ $rc -eq 0 -o -z "$coredump_errors" ] || return 2
+    # a journal file systemd had to skip is not a failed lookup - the other
+    # files were searched - but it does leave a blind spot, so keep it apart
+    # from both the findings and the real errors
+    coredump_skipped=$(grep -F 'ignoring file.' <<<"$out")
+    out=$(grep -vF 'ignoring file.' <<<"$out")
 
     coredump_errors=
+    coredumps=
+
+    if [ $rc -eq 0 ]; then
+        coredumps="$out"
+        return 0
+    fi
+
+    [ -z "$out" ] || { coredump_errors="$out"; return 2; }
+
     return 0
 }
 
@@ -49,9 +60,12 @@ function rate_coredumps() {
         rating=2
     elif [ -n "${coredumps}" ]; then
         rating=2
+    elif [ -n "${coredump_skipped}" ]; then
+        # the searchable part of the journal held no core dump, but the skipped
+        # part may have, so there is evidence neither way
+        error "core dumps could only be looked up in part of the journal: ${coredump_skipped}"
+        rating=1
     fi
-
-    do_rate ${rating}
 
     return ${rating}
 }
@@ -74,6 +88,7 @@ function do_get_infos() {
     print_info_header "${ME}" "${rating}"
     [ -z "${coredumps}" ] || echo "${coredumps}"
     [ -z "${coredump_errors}" ] || echo "${coredump_errors}"
+    [ -z "${coredump_skipped}" ] || echo "${coredump_skipped}"
 
     return ${rating}
 }

@@ -620,6 +620,70 @@ fn a_system_without_core_dumps_is_green() {
     );
 }
 
+// the message systemd emits for a journal file it had to skip; the remaining
+// files are searched normally
+const SKIPPED_JOURNAL: &str =
+    "Journal file /var/log/journal/0/user-1000@x.journal corrupted, ignoring file.";
+
+#[test]
+fn a_skipped_journal_file_is_not_rated_red() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.stub(
+        "coredumpctl",
+        &format!("echo '{SKIPPED_JOURNAL}' >&2\nexit 1\n"),
+    );
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_YELLOW,
+        "a damaged journal file means the rest was searched and nothing found, \
+         which is neither a healthy device nor a failed lookup:\n{}{}",
+        report.stdout, report.stderr
+    );
+}
+
+#[test]
+fn a_skipped_journal_file_does_not_hide_a_core_dump() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.stub(
+        "coredumpctl",
+        &format!("echo '{SKIPPED_JOURNAL}' >&2\necho 'SIGSEGV /usr/bin/crasher'\n"),
+    );
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["get-infos"]);
+
+    assert_eq!(
+        report.rating, RATING_RED,
+        "a core dump found beside a damaged journal file is still a core dump:\n{}{}",
+        report.stdout, report.stderr
+    );
+    assert!(
+        report.stdout.contains("SIGSEGV /usr/bin/crasher"),
+        "get-infos must report the core dump it found:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
+fn a_skipped_journal_file_is_still_reported() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.stub(
+        "coredumpctl",
+        &format!("echo '{SKIPPED_JOURNAL}' >&2\nexit 1\n"),
+    );
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["get-infos"]);
+
+    assert!(
+        report.stdout.contains("ignoring file."),
+        "get-infos must say which part of the journal could not be searched:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
 #[test]
 fn get_infos_reports_a_core_dump_lookup_that_failed() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
