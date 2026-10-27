@@ -242,7 +242,7 @@ impl Sandbox {
         )
         .expect("write service log config");
 
-        sandbox.stub("coredumpctl", "");
+        sandbox.stub("journalctl", "");
         sandbox.stub("timedatectl", TIMEDATECTL_STUB);
         sandbox.stub("systemctl", SYSTEMCTL_STUB);
         sandbox
@@ -603,7 +603,7 @@ fn a_service_selection_does_not_match_a_shorter_service_name() {
 #[test]
 fn check_rates_a_core_dump_red() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
-    sandbox.stub("coredumpctl", "echo 'SIGSEGV /usr/bin/crasher'\n");
+    sandbox.stub("journalctl", &format!("echo '{CORE_DUMP_ENTRY}'\n"));
 
     let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
 
@@ -623,10 +623,7 @@ fn check_rates_a_core_dump_red() {
 #[test]
 fn a_core_dump_lookup_that_failed_is_not_green() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
-    sandbox.stub(
-        "coredumpctl",
-        "echo 'Failed to open journal.' >&2\nexit 1\n",
-    );
+    sandbox.stub("journalctl", "echo 'Failed to open journal.' >&2\nexit 1\n");
 
     let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
 
@@ -646,9 +643,8 @@ fn a_core_dump_lookup_that_failed_is_not_green() {
 #[test]
 fn a_system_without_core_dumps_is_green() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
-    // coredumpctl reports an empty result as a failure, and "-q" is what
-    // keeps it from saying so
-    sandbox.stub("coredumpctl", "exit 1\n");
+    // journalctl succeeds when no entry matched, so the default stub already
+    // behaves like the tool does on a device without core dumps
 
     let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
 
@@ -660,17 +656,42 @@ fn a_system_without_core_dumps_is_green() {
 }
 
 // the message systemd emits for a journal file it had to skip; the remaining
-// files are searched normally
+// files are searched normally, so journalctl still succeeds
 const SKIPPED_JOURNAL: &str =
     "Journal file /var/log/journal/0/user-1000@x.journal corrupted, ignoring file.";
+
+// the message systemd-coredump logs for a core dump
+const CORE_DUMP_ENTRY: &str = "Process 1234 (crasher) of user 0 dumped core.";
+
+// systemd follows this skip with a second line that carries no wording of its
+// own about the file being left out
+const UNSUPPORTED_JOURNAL: &str = "Journal file /var/log/journal/0/system@x.journal uses an \
+                                   unsupported feature, ignoring file.\nUse \
+                                   SYSTEMD_LOG_LEVEL=debug journalctl \
+                                   --file=/var/log/journal/0/system@x.journal to see the details.";
+
+#[test]
+fn a_skipped_journal_file_is_rated_by_the_exit_status_not_the_wording() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.stub(
+        "journalctl",
+        &format!("cat >&2 <<'EOT'\n{UNSUPPORTED_JOURNAL}\nEOT\n"),
+    );
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_YELLOW,
+        "a skipped journal file is a blind spot whatever systemd calls \
+         it:\n{}{}",
+        report.stdout, report.stderr
+    );
+}
 
 #[test]
 fn a_skipped_journal_file_is_not_rated_red() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
-    sandbox.stub(
-        "coredumpctl",
-        &format!("echo '{SKIPPED_JOURNAL}' >&2\nexit 1\n"),
-    );
+    sandbox.stub("journalctl", &format!("echo '{SKIPPED_JOURNAL}' >&2\n"));
 
     let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
 
@@ -686,8 +707,8 @@ fn a_skipped_journal_file_is_not_rated_red() {
 fn a_skipped_journal_file_does_not_hide_a_core_dump() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
     sandbox.stub(
-        "coredumpctl",
-        &format!("echo '{SKIPPED_JOURNAL}' >&2\necho 'SIGSEGV /usr/bin/crasher'\n"),
+        "journalctl",
+        &format!("echo '{SKIPPED_JOURNAL}' >&2\necho '{CORE_DUMP_ENTRY}'\n"),
     );
 
     let report = sandbox.run_script("omnect_health_check.sh", &["get-infos"]);
@@ -698,7 +719,7 @@ fn a_skipped_journal_file_does_not_hide_a_core_dump() {
         report.stdout, report.stderr
     );
     assert!(
-        report.stdout.contains("SIGSEGV /usr/bin/crasher"),
+        report.stdout.contains(CORE_DUMP_ENTRY),
         "get-infos must report the core dump it found:\n{}{}",
         report.stdout,
         report.stderr
@@ -708,10 +729,7 @@ fn a_skipped_journal_file_does_not_hide_a_core_dump() {
 #[test]
 fn a_skipped_journal_file_is_still_reported() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
-    sandbox.stub(
-        "coredumpctl",
-        &format!("echo '{SKIPPED_JOURNAL}' >&2\nexit 1\n"),
-    );
+    sandbox.stub("journalctl", &format!("echo '{SKIPPED_JOURNAL}' >&2\n"));
 
     let report = sandbox.run_script("omnect_health_check.sh", &["get-infos"]);
 
@@ -726,10 +744,7 @@ fn a_skipped_journal_file_is_still_reported() {
 #[test]
 fn get_infos_reports_a_core_dump_lookup_that_failed() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
-    sandbox.stub(
-        "coredumpctl",
-        "echo 'Failed to open journal.' >&2\nexit 1\n",
-    );
+    sandbox.stub("journalctl", "echo 'Failed to open journal.' >&2\nexit 1\n");
 
     let report = sandbox.run_script("omnect_health_check.sh", &["get-infos"]);
 
@@ -1248,7 +1263,7 @@ fn check_rates_an_undisturbed_system_green() {
 #[test]
 fn get_infos_rates_a_core_dump_red() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
-    sandbox.stub("coredumpctl", "echo 'SIGSEGV /usr/bin/crasher'\n");
+    sandbox.stub("journalctl", &format!("echo '{CORE_DUMP_ENTRY}'\n"));
 
     let report = sandbox.run_script("omnect_health_check.sh", &["get-infos"]);
 
@@ -1258,7 +1273,7 @@ fn get_infos_rates_a_core_dump_red() {
         report.stdout, report.stderr
     );
     assert!(
-        report.stdout.contains("/usr/bin/crasher"),
+        report.stdout.contains(CORE_DUMP_ENTRY),
         "get-infos must report the core dump it found:\n{}{}",
         report.stdout,
         report.stderr

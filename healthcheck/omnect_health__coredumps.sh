@@ -3,6 +3,10 @@
 
 . "$(dirname -- "${BASH_SOURCE[0]}")/healthchecklib.sh" || exit 2
 
+# the journal entry systemd-coredump writes for every core dump
+# (SD_MESSAGE_COREDUMP)
+COREDUMP_MESSAGE_ID=fc2e22bc6ee647b6b90729ab34a250b1
+
 # the core dumps of the current system run, what kept them from being looked
 # up, and which parts of the journal could not be searched
 coredumps=
@@ -13,13 +17,18 @@ coredump_skipped=
 # when it could look for them, and 2 when it could not
 #
 # NOTE:
-#   coredumpctl exits non-zero both when it found nothing and when it could
-#   not run at all, so its exit status alone cannot tell a system without core
-#   dumps from a check that never looked. "-q" silences the message about an
-#   empty result, which leaves its diagnostics as the only difference between
-#   the two.
+#   journalctl answers both questions on its own: it succeeds whether or not
+#   an entry matched, and fails only when it could read no journal file at
+#   all, so the rating follows its exit status instead of the wording of a
+#   diagnostic. coredumpctl cannot be used for this, because it also exits
+#   non-zero when it simply found nothing.
+#
+# NOTE:
+#   the lookup is run twice, keeping the entries once and the diagnostics the
+#   other time: a journal file that had to be skipped is reported on stderr,
+#   and in a single stream it could not be told from an entry.
 function find_coredumps() {
-    local up now since sinces out rc=0
+    local up now since sinces jargs rc=0
 
     # at first find out time span we want to have core dumps for as we inly want
     # to consider those that happened during this system run
@@ -28,25 +37,20 @@ function find_coredumps() {
     sinces=$((now - up))
     since="$(date -d '@'"$sinces" +"%Y-%m-%d %H:%M:%S")"
 
-    # both streams can share a variable: core dumps are only ever printed when
-    # coredumpctl succeeds, and the diagnostics are sorted out right below
-    out=$(coredumpctl -q --since "$since" 2>&1) || rc=$?
+    jargs=(-q --since "${since}" "MESSAGE_ID=${COREDUMP_MESSAGE_ID}")
 
-    # a journal file systemd had to skip is not a failed lookup - the other
-    # files were searched - but it does leave a blind spot, so keep it apart
-    # from both the findings and the real errors
-    coredump_skipped=$(grep -F 'ignoring file.' <<<"$out")
-    out=$(grep -vF 'ignoring file.' <<<"$out")
-
+    coredumps=$(journalctl "${jargs[@]}" 2>/dev/null) || rc=$?
+    coredump_skipped=$(journalctl "${jargs[@]}" 2>&1 1>/dev/null)
     coredump_errors=
-    coredumps=
 
-    if [ $rc -eq 0 ]; then
-        coredumps="$out"
-        return 0
+    # a skipped journal file leaves a blind spot, but the other files were
+    # searched, so it is kept apart from a lookup that yielded nothing
+    if [ ${rc} -ne 0 ]; then
+        coredump_errors="${coredump_skipped:-the journal could not be read}"
+        coredump_skipped=
+        coredumps=
+        return 2
     fi
-
-    [ -z "$out" ] || { coredump_errors="$out"; return 2; }
 
     return 0
 }
