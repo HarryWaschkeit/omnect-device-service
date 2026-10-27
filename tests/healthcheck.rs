@@ -489,6 +489,133 @@ fn an_empty_configuration_is_not_rated_green() {
         report.stdout,
         report.stderr
     );
+    assert_eq!(
+        report.ratings(),
+        [("[YELLOW]", "omnect_health_checks.json")],
+        "a run that checked nothing must say so where the rating is \
+         read:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
+fn a_config_file_without_a_document_is_rated_red() {
+    let sandbox = Sandbox::new("");
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_RED,
+        "a config file carrying no document must not pass as an empty list \
+         of checks:\n{}{}",
+        report.stdout, report.stderr
+    );
+    assert_eq!(
+        report.ratings(),
+        [("[RED]", "omnect_health_checks.json")],
+        "the config file that rated this run must be named where the rating \
+         is read:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
+fn a_missing_config_file_is_rated_where_the_rating_is_read() {
+    let sandbox = Sandbox::new("[]");
+    fs::remove_file(sandbox.etc().join("omnect_health_checks.json")).expect("remove check config");
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_RED,
+        "a device without a check configuration must not be rated green:\n{}{}",
+        report.stdout, report.stderr
+    );
+    assert_eq!(
+        report.ratings(),
+        [("[RED]", "omnect_health_checks.json")],
+        "the missing config file must be named where the rating is read:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+    assert!(
+        report.stdout.contains("OVERALL:"),
+        "a run that rates this device must end in an overall rating:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
+fn an_unknown_check_name_is_rated_yellow_and_named() {
+    let sandbox = Sandbox::new(&stock_config());
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check", "aziot"]);
+
+    assert_eq!(
+        report.rating, RATING_YELLOW,
+        "a run in which nothing was checked leaves the health of this device \
+         unknown:\n{}{}",
+        report.stdout, report.stderr
+    );
+    assert_eq!(
+        report.ratings(),
+        [("[YELLOW]", "omnect_health_checks.json")],
+        "a run that checked nothing must say so where the rating is \
+         read:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+    assert!(
+        report.stdout.contains("OVERALL:"),
+        "a run that rates this device must end in an overall rating:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
+fn a_check_that_cannot_be_run_is_named_by_its_entry() {
+    let sandbox = Sandbox::new(
+        r#"[ { "name": "first", "type": "absent" },
+             { "name": "second", "type": "absent" } ]"#,
+    );
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.ratings(),
+        [("[RED]", "first"), ("[RED]", "second")],
+        "every entry whose check cannot be run must be told apart by its \
+         name:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
+#[test]
+fn a_check_failing_beyond_the_known_ratings_is_rated_red() {
+    let sandbox = Sandbox::new(r#"[ { "name": "confused", "type": "confused" } ]"#);
+    sandbox.install_check("confused", "echo 'something happened'\nexit 9\n");
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_RED,
+        "an exit status outside the known ratings must not pass as a \
+         rating:\n{}{}",
+        report.stdout, report.stderr
+    );
+    assert_eq!(
+        report.ratings(),
+        [("[RED]", "confused")],
+        "the check that left an unusable exit status must be named where the \
+         rating is read:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
 }
 
 #[test]

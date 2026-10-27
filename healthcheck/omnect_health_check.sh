@@ -34,11 +34,16 @@ entries=()
 #   jq's exit status decides here: on a malformed config file it prints the
 #   entries it could read before giving up, and checking only those would rate
 #   a device whose remaining checks never ran
+#
+# NOTE:
+#   the document is read through "input" rather than from jq's own input, so
+#   that an empty file - no JSON document at all, and a common result of a
+#   power loss during a write - fails instead of looking like an empty list
 function read_entries() {
     local cfgfile="$1" rawentries
 
-    rawentries=$(jq -r 'def flat: tostring | split("\n") | join(" ") | split("\r") | join(" "); .[] | [ (."type" // "" | flat), (."name" // "" | flat), (."extra-args" // "" | flat) ] | join("\u001f")' "$cfgfile") \
-	|| return 2
+    rawentries=$(jq -n -r 'input | def flat: tostring | split("\n") | join(" ") | split("\r") | join(" "); .[] | [ (."type" // "" | flat), (."name" // "" | flat), (."extra-args" // "" | flat) ] | join("\u001f")' "$cfgfile") \
+        || return 2
 
     [ "$rawentries" ] && mapfile -t entries <<<"$rawentries"
 
@@ -54,14 +59,14 @@ function verify_check_names() {
     [ $# -gt 0 ] || return 0
 
     for entry in "${entries[@]}"; do
-	IFS=$'\037' read -r type name _ <<<"$entry"
-	[ -z "$type" ] || known+=("$type")
-	[ -z "$name" ] || known+=("$name")
+        IFS=$'\037' read -r type name _ <<<"$entry"
+        [ -z "$type" ] || known+=("$type")
+        [ -z "$name" ] || known+=("$name")
     done
 
     local unknown_checks=()
     for check; do
-	in_list "$check" "${known[@]}" || unknown_checks+=("$check")
+        in_list "$check" "${known[@]}" || unknown_checks+=("$check")
     done
 
     # one name per line, so a name containing a blank stays one name
@@ -83,7 +88,7 @@ function do__cmd() {
     nchecked=0
     nchecks=${#entries[@]}
     [ $nchecks -gt 0 ] \
-	|| warn "no checks defined in config file \"$cfgfile\""
+        || warn "no checks defined in config file \"$cfgfile\""
 
     i=0
     for entry in "${entries[@]}"; do
@@ -92,17 +97,16 @@ function do__cmd() {
         IFS=$'\037' read -r type name extra_args <<<"$entry"
         : ${name:=$type}
 
-        # an entry nobody asked for must not rate this run, no matter whether
-        # it could be run at all; an entry without a type may still carry the
-        # name it was selected by
+        # only entries the caller asked for are run and rated; an entry
+        # without a type can still be selected by its name
         if [ ${#selected_checks[@]} -gt 0 ] \
            && ! in_list "$name" "${selected_checks[@]}" \
            && ! in_list "$type" "${selected_checks[@]}"; then
             continue
         fi
 
-        # an entry that cannot name the check it stands for is still the entry
-        # that rates this run, so it is named by what it has
+        # an entry without a type is rated red and named by its name or by
+        # its position
         [ "$type" ] \
             || { error "entry $i in \"$cfgfile\" is missing \"type\" attribute"; print_rating 2 "${name:-entry $i}" "${cfgfile##*/}"; do_rate 2; nchecked=$((nchecked + 1)); continue; }
 
@@ -110,7 +114,7 @@ function do__cmd() {
         if [ ! -x "$check" ]; then
             local rate=2
             error "check \"$check\" for type \"$type\" (entry $i in \"$cfgfile\") cannot be called"
-            print_rating $rate ${type} "${check##*/}"
+            print_rating $rate "$name" "${check##*/}"
             do_rate $rate
             nchecked=$((nchecked + 1))
             continue
@@ -119,26 +123,26 @@ function do__cmd() {
         output=$($check $cmd $extra_args)
         retval=$?
 
-        if [ $output_when = 2 -o $output_when = 1 -a $retval != 0 ]; then
+        if [ -n "$output" ] \
+           && [ $output_when = 2 -o $output_when = 1 -a $retval != 0 ]; then
             echo "$output"
         fi
 
-	# a check that rates this run has to be named where the rating is
-	# read: the dispatcher stands in whenever the check left nothing but
-	# its exit status behind, so a check of its own cannot reopen this gap
-	if [ "$retval" -gt 2 ]; then
-	    print_rating 2 "$name" "${check##*/}"
-	elif [ "$retval" -ne 0 -a -z "$output" ]; then
-	    print_rating "$retval" "$name" "${check##*/}"
-	fi
-	do_rate $retval "${check##*/}"
+        # a failing check that printed nothing is named here, so every
+        # non-green rating has a line of its own
+        if [ "$retval" -gt 2 ]; then
+            print_rating 2 "$name" "${check##*/}"
+        elif [ "$retval" -ne 0 -a -z "$output" ]; then
+            print_rating "$retval" "$name" "${check##*/}"
+        fi
+        do_rate $retval "${check##*/}"
         nchecked=$((nchecked + 1))
 
     done
 
     # a device nothing was checked on is not healthy, it is unknown
     [ $nchecked -gt 0 ] \
-	|| { error "no check was run, health of this device is unknown"; do_rate 1; }
+        || { error "no check was run, health of this device is unknown"; print_rating 1 "${cfgfile##*/}" "${ME}"; do_rate 1; }
 }
 
 function do_checks() {
@@ -160,30 +164,36 @@ command="${1:-check}"
 [ "$1" ] && shift
 check_command_arg "$command"
 
-[ -r "${CFGFILEPATH}" ] || { fatal "configuration file \"${CFGFILEPATH}\" not found"; exit 1; }
-
-if read_entries "${CFGFILEPATH}"; then
+# a missing config file is as fatal as an unreadable one, and is rated the
+# same way: no check could run, so the rating has to say so where it is read
+if [ ! -r "${CFGFILEPATH}" ]; then
+    fatal "configuration file \"${CFGFILEPATH}\" not found"
+    print_rating 2 "${CFGFILE}" "${ME}"
+    do_rate 2
+elif read_entries "${CFGFILEPATH}"; then
     # the arguments following the command are optional and name the checks to
     # be run
     if unknown=$(verify_check_names "$@"); then
-	case "$command" in
-	    check)
-		do_checks "${CFGFILEPATH}" "$@"
-		;;
-	    get-infos)
-		do_get_infos "${CFGFILEPATH}" "$@"
-		;;
-	esac
+        case "$command" in
+            check)
+                do_checks "${CFGFILEPATH}" "$@"
+                ;;
+            get-infos)
+                do_get_infos "${CFGFILEPATH}" "$@"
+                ;;
+        esac
     else
-	mapfile -t unknown_checks <<<"$unknown"
-	printf -v unknown_list '%s, ' "${unknown_checks[@]}"
-	error "unknown check name(s) [${unknown_list%, }]"
-	exit 1
+        mapfile -t unknown_checks <<<"$unknown"
+        printf -v unknown_list '%s, ' "${unknown_checks[@]}"
+        error "unknown check name(s) [${unknown_list%, }]"
+        # the caller named checks this device does not have, so nothing was
+        # checked and the health of the device is unknown rather than bad
+        print_rating 1 "${CFGFILE}" "${ME}"
+        do_rate 1
     fi
 else
-    # the entries this run was to be made of are unknown, so there is nothing
-    # left to run - but the run still has to be rated where the caller reads
-    # the rating, and the cause named next to it
+    # without the entries there is nothing to run, so the run is rated red
+    # and the config file is named as the cause
     error "config file \"${CFGFILEPATH}\" could not be read"
     print_rating 2 "${CFGFILE}" "${ME}"
     do_rate 2
