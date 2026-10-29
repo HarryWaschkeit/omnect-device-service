@@ -1496,6 +1496,27 @@ fn a_missing_service_config_is_not_rated_green() {
     );
 }
 
+/// An exit log that exists but cannot be read says nothing about the service
+/// it belongs to, and skipping it silently rates that service green.
+#[test]
+fn an_unreadable_exit_log_is_rated_red() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.set_service_analysis(CRASH_RATED_SERVICE);
+    sandbox.write_exit_log("picky", "exited");
+    write_with_mode(&sandbox.run().join("picky.exit-log"), "", 0o000);
+
+    let report = sandbox.run_script("omnect_health__services.sh", &["check"]);
+
+    assert_eq!(
+        report.ratings(),
+        [("[RED]", "picky")],
+        "an exit log that cannot be read must not leave its service \
+         green:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
 /// The service check reads the exit logs while services are being stopped, so
 /// a log must not turn up under its final name before it holds an entry.
 #[test]

@@ -155,8 +155,10 @@ function do__cmd() {
 
         [ ${#check_services[@]} -eq 0 ] || in_list "$service" "${check_services[@]}" || continue
 
+        # an exit log that is there but cannot be read says nothing about
+        # its service, and the rating has to say so instead of skipping it
         servicelog="$LOGDIR/${service}.exit-log"
-        if [ -r "$servicelog" ]; then
+        if [ -e "$servicelog" ]; then
             rate_servicelog "$service" "$servicelog"
             rating=$?
         fi
