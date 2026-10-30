@@ -27,6 +27,11 @@ coredump_skipped=
 #   the lookup is run twice, keeping the entries once and the diagnostics the
 #   other time: a journal file that had to be skipped is reported on stderr,
 #   and in a single stream it could not be told from an entry.
+#
+# NOTE:
+#   only the lookup for the entries is quiet: without -q journalctl writes
+#   "-- No entries --" where the entries are read, and with it it drops the
+#   warnings about journal files the caller may not read
 function find_coredumps() {
     local up now since sinces jargs rc=0
 
@@ -37,9 +42,9 @@ function find_coredumps() {
     sinces=$((now - up))
     since="$(date -d '@'"$sinces" +"%Y-%m-%d %H:%M:%S")"
 
-    jargs=(-q --since "${since}" "MESSAGE_ID=${COREDUMP_MESSAGE_ID}")
+    jargs=(--since "${since}" "MESSAGE_ID=${COREDUMP_MESSAGE_ID}")
 
-    coredumps=$(journalctl "${jargs[@]}" 2>/dev/null) || rc=$?
+    coredumps=$(journalctl -q "${jargs[@]}" 2>/dev/null) || rc=$?
     coredump_skipped=$(journalctl "${jargs[@]}" 2>&1 1>/dev/null)
     coredump_errors=
 

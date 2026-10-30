@@ -868,6 +868,31 @@ fn a_skipped_journal_file_is_still_reported() {
     );
 }
 
+// journalctl(1) on -q: "Suppresses all informational messages ... any warning
+// messages regarding inaccessible system journals when run as a normal user."
+const INACCESSIBLE_JOURNAL: &str =
+    "Journal file /var/log/journal/0/system@x.journal not accessible: Permission denied.";
+
+#[test]
+fn a_journal_the_caller_may_not_read_is_not_rated_green() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.stub(
+        "journalctl",
+        &format!(
+            "for arg; do [ \"$arg\" = -q ] && exit 0; done\n\
+             echo '{INACCESSIBLE_JOURNAL}' >&2\n"
+        ),
+    );
+
+    let report = sandbox.run_script("omnect_health_check.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_YELLOW,
+        "a journal the check may not read holds unknown core dumps:\n{}{}",
+        report.stdout, report.stderr
+    );
+}
+
 #[test]
 fn get_infos_reports_a_core_dump_lookup_that_failed() {
     let sandbox = Sandbox::new(COREDUMPS_CONFIG);
