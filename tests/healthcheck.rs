@@ -663,8 +663,8 @@ fn a_check_that_says_nothing_is_still_named_with_its_rating() {
     assert_eq!(
         report.ratings(),
         [("[RED]", "silent")],
-        "a check that rates this run without saying so must not leave the \
-         overall rating as the only trace of it:\n{}{}",
+        "a failing check that printed nothing must still be named with its \
+         rating:\n{}{}",
         report.stdout,
         report.stderr
     );
@@ -832,8 +832,8 @@ fn a_skipped_journal_file_is_not_rated_red() {
 
     assert_eq!(
         report.rating, RATING_YELLOW,
-        "a damaged journal file means the rest was searched and nothing found, \
-         which is neither a healthy device nor a failed lookup:\n{}{}",
+        "a damaged journal file leaves a blind spot, so the device is of \
+         unknown health:\n{}{}",
         report.stdout, report.stderr
     );
 }
