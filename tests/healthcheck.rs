@@ -1496,6 +1496,30 @@ fn a_missing_service_config_is_not_rated_green() {
     );
 }
 
+/// A rules file naming no service at all leaves the check with nothing to
+/// rate, which says nothing about this device and must not pass as health.
+#[test]
+fn a_check_that_rated_no_service_at_all_is_rated_yellow() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.set_service_analysis(r#"{ "services": [], "default-ratings": [] }"#);
+
+    let report = sandbox.run_script("omnect_health__services.sh", &["check"]);
+
+    assert_eq!(
+        report.rating, RATING_YELLOW,
+        "a check that rated no service must not be rated green:\n{}{}",
+        report.stdout, report.stderr
+    );
+    assert_eq!(
+        report.ratings(),
+        [("[YELLOW]", "omnect_health__services.sh")],
+        "a check that rated nothing must say so where the rating is \
+         read:\n{}{}",
+        report.stdout,
+        report.stderr
+    );
+}
+
 /// An exit log that exists but cannot be read says nothing about the service
 /// it belongs to, and skipping it silently rates that service green.
 #[test]

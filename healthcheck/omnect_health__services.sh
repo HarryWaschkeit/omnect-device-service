@@ -134,7 +134,7 @@ function report_all() {
 #   is reported
 function do__cmd() {
     local report="$1"
-    local service rating servicelog services=() known unknown=()
+    local service rating servicelog services=() known unknown=() nrated=0
 
     # NOTE:
     #   what a missing configuration means depends on what was asked for, so
@@ -165,6 +165,7 @@ function do__cmd() {
 
         do_rate "$rating"
         "$report" "$service" "$rating"
+        nrated=$((nrated + 1))
     done
 
     mapfile -t unknown < <(unknown_services "${services[@]}")
@@ -172,7 +173,16 @@ function do__cmd() {
         warn "no rules for service \"$service\" in \"$CFGFILEPATH\""
         do_rate 1
         "$report" "$service" 1
+        nrated=$((nrated + 1))
     done
+
+    # a configuration naming no service leaves nothing to rate, which tells
+    # as little about this device as a check that never ran
+    if [ $nrated -eq 0 ]; then
+        warn "no service to rate in \"$CFGFILEPATH\""
+        do_rate 1
+        report_all "$report" 1
+    fi
 
     get_overall_rating
 }
