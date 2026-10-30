@@ -186,6 +186,14 @@ fn read_script(name: &str) -> String {
     fs::read_to_string(Path::new(HEALTHCHECK_SRC).join(name)).expect("read healthcheck script")
 }
 
+/// The number of calls the counting `jq` wrapper recorded.
+fn jq_calls(counter: &Path) -> usize {
+    fs::read_to_string(counter)
+        .unwrap_or_default()
+        .lines()
+        .count()
+}
+
 fn require_jq() {
     Command::new("jq")
         .arg("--version")
@@ -1362,10 +1370,7 @@ fn the_check_configuration_is_read_in_a_single_pass() {
         "an undisturbed system must still be rated green:\n{}{}",
         report.stdout, report.stderr
     );
-    let calls = fs::read_to_string(&counter)
-        .unwrap_or_default()
-        .lines()
-        .count();
+    let calls = jq_calls(&counter);
     assert_eq!(
         calls, CONFIG_READS,
         "reading 11 check entries must not start {calls} jq processes:\n{}{}",
@@ -1387,10 +1392,7 @@ fn naming_a_check_does_not_read_the_configuration_again() {
         report.stdout,
         report.stderr
     );
-    let calls = fs::read_to_string(&counter)
-        .unwrap_or_default()
-        .lines()
-        .count();
+    let calls = jq_calls(&counter);
     assert_eq!(
         calls, CONFIG_READS,
         "a name has to be looked up in the entries already read, but the \
@@ -1628,11 +1630,7 @@ fn the_stop_hook_does_not_rate_the_service_it_logs() {
     sandbox.set_service_analysis(CRASH_RATED_SERVICE);
     sandbox.install_service_log();
     let marker = sandbox.root().join("the-service-check-ran");
-    write_with_mode(
-        &sandbox.lib().join("omnect_health__services.sh"),
-        &format!("#!/bin/bash\ntouch \"{}\"\n", marker.display()),
-        EXECUTABLE_MODE,
-    );
+    sandbox.install_check("services", &format!("touch \"{}\"\n", marker.display()));
 
     sandbox.run_script(
         "omnect_service_log.sh",
