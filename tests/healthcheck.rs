@@ -1569,6 +1569,32 @@ fn an_exit_log_turns_up_only_once_its_first_entry_is_in_it() {
     );
 }
 
+/// The exit info is the only record of what the journal held when a service
+/// died, so a truncated one must not be installed, let alone kept as the
+/// first failure of that service.
+#[test]
+fn a_truncated_exit_info_is_not_installed() {
+    let sandbox = Sandbox::new(COREDUMPS_CONFIG);
+    sandbox.set_service_analysis(CRASH_RATED_SERVICE);
+    sandbox.install_service_log();
+    sandbox.stub("journalctl", "echo 'half an entry'\nexit 1\n");
+
+    sandbox.run_script(
+        "omnect_service_log.sh",
+        &["stop", "picky", "exit-code", "exited", "SEGV"],
+    );
+
+    assert!(
+        !sandbox.run().join("picky.1st.exit-info").exists(),
+        "an exit info that was never written completely was kept as the \
+         first failure of this service"
+    );
+    assert!(
+        !sandbox.run().join("picky.exit-info").exists(),
+        "an exit info that was never written completely was installed"
+    );
+}
+
 /// Stopping a service must not rate it: nothing reads the result, and the
 /// rating is worked out afresh whenever a check actually asks for one.
 #[test]

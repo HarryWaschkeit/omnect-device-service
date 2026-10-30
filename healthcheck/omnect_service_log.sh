@@ -75,6 +75,7 @@ function output_exitinfo() {
     local exitcode="$5"
     local exitstatus="$6"
 
+    local failed=0
     {
 	cat <<EOF
 ========================================
@@ -86,7 +87,13 @@ Timestamp:   $timestamp
 ----------------------------------------
 EOF
 	journalctl -b0 --no-pager -l -u "$service"
-    } > "${outputfile}.tmp"
+    } > "${outputfile}.tmp" || failed=1
+
+    if [ $failed -ne 0 ]; then
+	rm -f "${outputfile}.tmp"
+	fatal "couldn't write the exit info of service \"$service\""
+	return 1
+    fi
 
     mv "${outputfile}.tmp" "${outputfile}"
 }
@@ -131,8 +138,8 @@ case "$1" in
     stop)
 	# FIXME: do we need to take care of log file rotation or removal?
 	output_logentry "$SERVICE_EXITLOGFILE" "$timestamp" "$SERVICE" "$3" "$4" "$5"
-	output_exitinfo "$SERVICE_EXITINFOFILE" "$timestamp" "$SERVICE" "$3" "$4" "$5"
-	if [ ! -r "$SERVICE_EXITINFOFILE_1ST" ]; then
+	if output_exitinfo "$SERVICE_EXITINFOFILE" "$timestamp" "$SERVICE" "$3" "$4" "$5" \
+	    && [ ! -r "$SERVICE_EXITINFOFILE_1ST" ]; then
 	    cp -a "$SERVICE_EXITINFOFILE" "$SERVICE_EXITINFOFILE_1ST"
 	fi
     ;;
